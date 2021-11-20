@@ -240,6 +240,10 @@ function drawSprite(opt: DrawSpriteOpt) {
 		...opt,
 		tex: spr.tex,
 		quad: q.scale(opt.quad || quad(0, 0, 1, 1)),
+		uniform: {
+			...opt.uniform,
+			"u_transform": opt.fixed ? mat4() : game.camMatrix,
+		},
 	});
 }
 
@@ -250,6 +254,10 @@ function drawText(opt: DrawTextOpt) {
 	gfx.drawText({
 		...opt,
 		font: font,
+		uniform: {
+			...opt.uniform,
+			"u_transform": opt.fixed ? mat4() : game.camMatrix,
+		},
 	});
 }
 
@@ -1525,11 +1533,9 @@ function getRenderProps(obj: GameObj<any>) {
 		opacity: obj.opacity,
 		origin: obj.origin,
 		outline: obj.outline,
+		fixed: obj.fixed,
 		shader: assets.shaders[obj.shader],
-		uniform: {
-			...obj.uniform,
-			"u_transform": obj.fixed ? mat4() : game.camMatrix,
-		},
+		uniform: obj.uniform,
 	};
 }
 

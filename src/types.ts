@@ -3634,6 +3634,10 @@ export type Area =
 	| { shape: "polygon" } & { pts: Polygon }
 	;
 
+export interface DrawResult {
+	area: Area,
+}
+
 export type Shape =
 	| "rect"
 	| "line"

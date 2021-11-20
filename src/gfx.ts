@@ -97,8 +97,8 @@ type DrawTextOpt2 = RenderProps & {
 	lineSpacing?: number,
 	letterSpacing?: number,
 	origin?: Origin | Vec2,
-	transform?: CharTransformFunc,
-	styles?: Record<string, CharTransformFunc>,
+	transform?: CharTransform | CharTransformFunc,
+	styles?: Record<string, CharTransform | CharTransformFunc>,
 }
 
 interface GfxTexOpt {
@@ -1087,6 +1087,7 @@ function gfxInit(gl: WebGLRenderingContext, gopt: GfxOpt): Gfx {
 		if (tr.opacity) fchar.opacity *= tr.opacity;
 	}
 
+	// TODO: escape
 	const TEXT_STYLE_RE = /\[(?<text>[^\]]*)\]\.(?<style>[\w\.]+)+/g;
 
 	function compileStyledText(text: string): {
@@ -1105,13 +1106,14 @@ function gfxInit(gl: WebGLRenderingContext, gopt: GfxOpt): Gfx {
 		// put each styled char index into a map for easy access when iterating each char
 		for (const match of text.matchAll(TEXT_STYLE_RE)) {
 			const styles = match.groups.style.split(".");
+			const origIdx = match.index - idxOffset;
 			for (
-				let i = match.index - idxOffset;
-				i <= match.index + match.groups.text.length;
+				let i = origIdx;
+				i < match.index + match.groups.text.length;
 				i++
 			) {
 				charStyleMap[i] = {
-					localIdx: i - match.index,
+					localIdx: i - origIdx,
 					styles: styles,
 				};
 			}
@@ -1160,6 +1162,7 @@ function gfxInit(gl: WebGLRenderingContext, gopt: GfxOpt): Gfx {
 				th += ch;
 				curX = 0;
 				lastSpace = null;
+				curLine.push(char);
 				flines.push(curLine);
 				curLine = [];
 			} else if ((opt.width ? (curX + cw > opt.width) : false)) {
@@ -1214,7 +1217,6 @@ function gfxInit(gl: WebGLRenderingContext, gopt: GfxOpt): Gfx {
 				const qpos = font.map[char];
 				const x = cn * cw;
 				const y = ln * ch;
-				idx += 1;
 				if (qpos) {
 					const fchar: FormattedChar = {
 						tex: font.tex,
@@ -1228,15 +1230,20 @@ function gfxInit(gl: WebGLRenderingContext, gopt: GfxOpt): Gfx {
 						uniform: opt.uniform,
 					}
 					if (opt.transform) {
-						const tr = opt.transform(idx, char);
+						const tr = typeof opt.transform === "function"
+							? opt.transform(idx, char)
+							: opt.transform;
 						if (tr) {
 							applyCharTransform(fchar, tr);
 						}
 					}
 					if (charStyleMap[idx]) {
 						const { styles, localIdx } = charStyleMap[idx];
-						for (const style of styles) {
-							const tr = opt.styles[style](localIdx, char);
+						for (const name of styles) {
+							const style = opt.styles[name];
+							const tr = typeof style === "function"
+								? style(localIdx, char)
+								: style;
 							if (tr) {
 								applyCharTransform(fchar, tr);
 							}
@@ -1244,6 +1251,7 @@ function gfxInit(gl: WebGLRenderingContext, gopt: GfxOpt): Gfx {
 					}
 					fchars.push(fchar);
 				}
+				idx += 1;
 			});
 		});
 

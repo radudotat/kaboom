@@ -2878,6 +2878,21 @@ export type DrawPolygonOpt = RenderProps & {
 	radius?: number,
 }
 
+export type DrawAreaOpt = RenderProps & {
+	/**
+	 * The area to draw.
+	 */
+	area: Area,
+	/**
+	 * If draw an outline around the shape.
+	 */
+	outline?: Outline,
+	/**
+	 * If fill the shape with color (set this to false if you only want an outline).
+	 */
+	fill?: boolean,
+}
+
 export interface Outline {
 	/**
 	 * The width, or thinkness of the line.

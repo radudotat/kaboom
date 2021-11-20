@@ -44,6 +44,7 @@ import {
 	Vertex,
 	DrawTextOpt,
 	DrawResult,
+	DrawAreaOpt,
 } from "./types";
 
 type GfxCtx = {
@@ -128,6 +129,7 @@ type Gfx = {
 	drawCircle(opt: DrawCircleOpt),
 	drawEllipse(opt: DrawEllipseOpt),
 	drawPolygon(opt: DrawPolygonOpt),
+	drawArea(opt: DrawAreaOpt),
 	drawUVQuad(opt: DrawUVQuadOpt),
 	formatText(opt: DrawTextOpt2): FormattedText,
 	frameStart(),
@@ -142,10 +144,11 @@ type Gfx = {
 	pushRotateX(angle: number): void,
 	pushRotateY(angle: number): void,
 	pushRotateZ(angle: number): void,
-	applyMatrix(m: Mat4),
+	pushMatrix(m: Mat4),
 	drawCalls(): number,
 	toNDC(pt: Vec2): Vec2,
 	toScreen(pt: Vec2): Vec2,
+	getTransform(): Mat4,
 };
 
 const DEF_ORIGIN = "topleft";
@@ -511,6 +514,37 @@ function gfxInit(gl: WebGLRenderingContext, gopt: GfxOpt): Gfx {
 
 	}
 
+	function drawArea(opt: DrawAreaOpt): DrawResult {
+		if (!opt.area) {
+			throw new Error("drawArea() requires property \"area\".");
+		}
+		switch (opt.area.shape) {
+			case "polygon":
+				return drawPolygon({
+					...opt,
+					pts: opt.area.pts,
+				});
+			case "line":
+				return drawLine({
+					...opt,
+					p1: opt.area.p1,
+					p2: opt.area.p2,
+				});
+			case "rect":
+				return drawRect({
+					...opt,
+					pos: opt.area.p1,
+					width: opt.area.p2.x - opt.area.p1.x,
+					height: opt.area.p2.y - opt.area.p1.y,
+				});
+			case "circle":
+				return drawCircle({
+					...opt,
+					pos: opt.area.center,
+					radius: opt.area.radius,
+				});
+		}
+	}
 	function flush() {
 
 		if (
@@ -594,7 +628,11 @@ function gfxInit(gl: WebGLRenderingContext, gopt: GfxOpt): Gfx {
 		);
 	}
 
-	function applyMatrix(m: Mat4) {
+	function getTransform(): Mat4 {
+		return gfx.transform
+	}
+
+	function pushMatrix(m: Mat4) {
 		gfx.transform = m.clone();
 	}
 
@@ -644,7 +682,7 @@ function gfxInit(gl: WebGLRenderingContext, gopt: GfxOpt): Gfx {
 	}
 
 	// draw a uv textured quad
-	function drawUVQuad(opt: DrawUVQuadOpt) {
+	function drawUVQuad(opt: DrawUVQuadOpt): DrawResult {
 
 		if (opt.width === undefined || opt.height === undefined) {
 			throw new Error("drawUVQuad() requires property \"width\" and \"height\".");
@@ -668,7 +706,7 @@ function gfxInit(gl: WebGLRenderingContext, gopt: GfxOpt): Gfx {
 		pushScale(opt.scale);
 		pushTranslate(offset);
 
-		drawRaw([
+		const res = drawRaw([
 			{
 				pos: vec3(-w / 2, h / 2, 0),
 				uv: vec2(opt.flipX ? q.x + q.w : q.x, opt.flipY ? q.y : q.y + q.h),
@@ -697,12 +735,12 @@ function gfxInit(gl: WebGLRenderingContext, gopt: GfxOpt): Gfx {
 
 		popTransform();
 
+		return res;
+
 	}
 
 	// TODO: clean
-	function drawTexture(
-		opt: DrawTextureOpt,
-	) {
+	function drawTexture(opt: DrawTextureOpt): DrawResult {
 
 		if (!opt.tex) {
 			throw new Error("drawTexture() requires property \"tex\".");
@@ -737,6 +775,7 @@ function gfxInit(gl: WebGLRenderingContext, gopt: GfxOpt): Gfx {
 					});
 				}
 			}
+
 		} else {
 
 			// TODO: should this ignore scale?
@@ -751,7 +790,7 @@ function gfxInit(gl: WebGLRenderingContext, gopt: GfxOpt): Gfx {
 				scale.x = scale.y;
 			}
 
-			drawUVQuad({
+			return drawUVQuad({
 				...opt,
 				// @ts-ignore
 				scale: scale.scale(opt.scale || vec2(1)),
@@ -798,7 +837,7 @@ function gfxInit(gl: WebGLRenderingContext, gopt: GfxOpt): Gfx {
 
 	}
 
-	function drawRect(opt: DrawRectOpt) {
+	function drawRect(opt: DrawRectOpt): DrawResult {
 
 		if (opt.width === undefined || opt.height === undefined) {
 			throw new Error("drawRect() requires property \"width\" and \"height\".");
@@ -843,7 +882,7 @@ function gfxInit(gl: WebGLRenderingContext, gopt: GfxOpt): Gfx {
 
 		}
 
-		drawPolygon({ ...opt, offset, pts });
+		return drawPolygon({ ...opt, offset, pts });
 
 	}
 
@@ -984,7 +1023,7 @@ function gfxInit(gl: WebGLRenderingContext, gopt: GfxOpt): Gfx {
 
 	}
 
-	function drawPolygon(opt: DrawPolygonOpt) {
+	function drawPolygon(opt: DrawPolygonOpt): DrawResult {
 
 		if (!opt.pts) {
 			throw new Error("drawPolygon() requires property \"pts\".");
@@ -1002,6 +1041,8 @@ function gfxInit(gl: WebGLRenderingContext, gopt: GfxOpt): Gfx {
 		pushRotateZ(opt.angle);
 		pushTranslate(opt.offset);
 
+		let res = null;
+
 		if (opt.fill !== false) {
 
 			const color = opt.color ?? rgb();
@@ -1018,7 +1059,7 @@ function gfxInit(gl: WebGLRenderingContext, gopt: GfxOpt): Gfx {
 				.map((n) => [0, n + 1, n + 2])
 				.flat();
 
-			drawRaw(verts, opt.indices ?? indices, gfx.defTex, opt.shader, opt.uniform);
+			res = drawRaw(verts, opt.indices ?? indices, gfx.defTex, opt.shader, opt.uniform);
 
 		}
 
@@ -1033,6 +1074,8 @@ function gfxInit(gl: WebGLRenderingContext, gopt: GfxOpt): Gfx {
 		}
 
 		popTransform();
+
+		return res;
 
 	}
 
@@ -1312,6 +1355,7 @@ function gfxInit(gl: WebGLRenderingContext, gopt: GfxOpt): Gfx {
 		drawCircle,
 		drawEllipse,
 		drawPolygon,
+		drawArea,
 		drawUVQuad,
 		formatText,
 		frameStart,
@@ -1323,11 +1367,12 @@ function gfxInit(gl: WebGLRenderingContext, gopt: GfxOpt): Gfx {
 		pushRotateZ,
 		pushTransform,
 		popTransform,
-		applyMatrix,
+		pushMatrix,
 		drawCalls,
 		background,
 		toNDC,
 		toScreen,
+		getTransform,
 	};
 
 }

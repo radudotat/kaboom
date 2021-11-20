@@ -139,6 +139,7 @@ import {
 	LevelOpt,
 	Cursor,
 	Recording,
+	DrawResult,
 } from "./types";
 
 import kaboomPlugin from "./plugins/kaboom";
@@ -230,13 +231,13 @@ function findAsset<T>(src: string | T, lib: Record<string, T>, def?: string): T 
 }
 
 // wrapper around gfx.drawTexture to integrate with sprite assets mananger / frame anim
-function drawSprite(opt: DrawSpriteOpt) {
+function drawSprite(opt: DrawSpriteOpt): DrawResult {
 	if (!opt.sprite) throw new Error(`drawSprite() requires property "sprite"`);
 	const spr = findAsset(opt.sprite, assets.sprites);
 	if (!spr) throw new Error(`sprite not found: "${opt.sprite}"`);
 	const q = spr.frames[opt.frame ?? 0];
 	if (!q) throw new Error(`frame not found: ${opt.frame ?? 0}`);
-	gfx.drawTexture({
+	return gfx.drawTexture({
 		...opt,
 		tex: spr.tex,
 		quad: q.scale(opt.quad || quad(0, 0, 1, 1)),
@@ -481,6 +482,7 @@ function make<T>(comps: CompList<T>): GameObj<T> {
 			gfx.pushTranslate(this.pos);
 			gfx.pushScale(this.scale);
 			gfx.pushRotateZ(this.angle);
+			this.transform = gfx.getTransform();
 			this.every((child) => child.draw());
 			this.trigger("draw");
 			gfx.popTransform();
@@ -1354,6 +1356,7 @@ function area(opt: AreaCompOpt = {}): AreaComp {
 			}
 			const a1 = this.worldArea();
 			const a2 = other.worldArea();
+			if (!a1 || !a2) return false;
 			return testAreaArea(a1, a2);
 		},
 
@@ -1406,7 +1409,9 @@ function area(opt: AreaCompOpt = {}): AreaComp {
 		},
 
 		hasPoint(pt: Vec2): boolean {
-			return testAreaPoint(this.worldArea(), pt);
+			const a = this.worldArea();
+			if (!a) return false;
+			return testAreaPoint(a, pt);
 		},
 
 		// push an obj out of another if they're overlapped
@@ -1479,34 +1484,8 @@ function area(opt: AreaCompOpt = {}): AreaComp {
 
 		},
 
-		// TODO: doesn't work with nested parent transforms
-		// TODO: cache
-		// TODO: use matrix mult for more accuracy and rotation?
-		worldArea(): Area {
-
-			let w = this.area.width ?? this.width;
-			let h = this.area.height ?? this.height;
-
-			if (w == null || h == null) {
-				throw new Error("failed to get area dimension");
-			}
-
-			const scale = vec2(this.scale ?? 1).scale(this.area.scale);
-
-			w *= scale.x;
-			h *= scale.y;
-
-			const orig = originPt(this.origin || DEF_ORIGIN);
-			const pos = (this.pos ?? vec2(0))
-				.add(this.area.offset)
-				.sub(orig.add(1, 1).scale(0.5).scale(w, h));
-
-			return {
-				shape: "rect",
-				p1: pos,
-				p2: vec2(pos.x + w, pos.y + h),
-			};
-
+		worldArea(): Area | null {
+			return this.renderedArea;
 		},
 
 		screenArea(): Area {
@@ -1609,7 +1588,7 @@ function sprite(id: string | SpriteData, opt: SpriteCompOpt = {}): SpriteComp {
 		},
 
 		draw() {
-			drawSprite({
+			this.renderedArea = drawSprite({
 				...getRenderProps(this),
 				sprite: spr,
 				frame: this.frame,
@@ -1619,7 +1598,7 @@ function sprite(id: string | SpriteData, opt: SpriteCompOpt = {}): SpriteComp {
 				tiled: opt.tiled,
 				width: opt.width,
 				height: opt.height,
-			});
+			}).area;
 		},
 
 		update() {
@@ -2969,22 +2948,17 @@ function drawDebug() {
 
 			const lwidth = (inspecting === obj ? 8 : 4) / scale;
 			const a = obj.worldArea();
-			const w = a.p2.x - a.p1.x;
-			const h = a.p2.y - a.p1.y;
 
-			gfx.drawRect({
-				pos: a.p1,
-				width: w,
-				height: h,
-				outline: {
-					width: lwidth,
-					color: lcolor,
-				},
-				uniform: {
-					"u_transform": obj.fixed ? mat4() : game.camMatrix,
-				},
-				fill: false,
-			});
+			if (a) {
+				gfx.drawArea({
+					area: a,
+					fill: false,
+					outline: {
+						width: lwidth,
+						color: lcolor,
+					},
+				})
+			}
 
 		});
 

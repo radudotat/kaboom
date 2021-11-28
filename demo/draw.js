@@ -27,7 +27,7 @@ onDraw(() => {
 	if (isKeyDown("space")) {
 		pushTransform()
 		pushTranslate(width() / 2, height() / 2)
-		pushRotate(t(240))
+		pushRotate(t(3))
 		pushTranslate(-width() / 2, -height() / 2)
 	}
 
@@ -61,7 +61,7 @@ onDraw(() => {
 		outline,
 	})
 
-	drawPolygon({
+	const res = drawPolygon({
 		pos: p(0, 1),
 		pts: [
 			vec2(w(-10, 10, 2), -80),
@@ -73,6 +73,10 @@ onDraw(() => {
 		color: rgb(w(128, 255, 8), 255, w(128, 255, 4)),
 		outline,
 	})
+
+	if (testAreaPoint(res.area, mousePos())) {
+		debug.log(123);
+	}
 
 	drawText({
 		text: "yo",

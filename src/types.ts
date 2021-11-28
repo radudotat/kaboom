@@ -2605,6 +2605,10 @@ export interface RenderProps {
 	fixed?: boolean,
 	shader?: GfxShader,
 	uniform?: Uniform,
+	/**
+	 * If only get the result but not render the object.
+	 */
+	dry?: boolean,
 }
 
 /**
@@ -2876,6 +2880,21 @@ export type DrawPolygonOpt = RenderProps & {
 	 * The radius of each corner.
 	 */
 	radius?: number,
+}
+
+export type DrawAreaOpt = RenderProps & {
+	/**
+	 * The area to draw.
+	 */
+	area: Area,
+	/**
+	 * If draw an outline around the shape.
+	 */
+	outline?: Outline,
+	/**
+	 * If fill the shape with color (set this to false if you only want an outline).
+	 */
+	fill?: boolean,
 }
 
 export interface Outline {
@@ -3642,6 +3661,12 @@ export type Shape =
 	| "circle"
 	| "polygon"
 	;
+
+export interface DrawResult {
+	area: Area,
+	bound: Rect,
+	culled: boolean,
+}
 
 export interface OutlineComp extends Comp {
 	outline: Outline,

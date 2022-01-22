@@ -2454,7 +2454,7 @@ export interface SoundData {
 }
 
 export type FontData = GfxFont;
-export type ShaderData = GfxShader;
+export type ShaderData = void;
 
 // TODO: enable setting on load, make part of SoundData
 /**
@@ -2564,13 +2564,6 @@ export interface AudioPlay {
 }
 
 // TODO: hide
-export interface GfxShader {
-	bind(): void,
-	unbind(): void,
-	send(uniform: Uniform): void,
-}
-
-// TODO: hide
 export interface GfxTexture {
 	width: number,
 	height: number,
@@ -2618,7 +2611,7 @@ export interface RenderProps {
 	color?: Color,
 	opacity?: number,
 	fixed?: boolean,
-	shader?: GfxShader,
+	shader?: string,
 	uniform?: Uniform,
 }
 

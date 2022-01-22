@@ -56,7 +56,6 @@ import {
 } from "./utils";
 
 import {
-	GfxShader,
 	GfxFont,
 	TexFilter,
 	RenderProps,
@@ -155,6 +154,10 @@ import {
 	Recording,
 	Kaboom,
 } from "./types";
+
+import {
+	Shader,
+} from "./gfx";
 
 // @ts-ignore
 import apl386Src from "./assets/apl386.png";
@@ -281,71 +284,6 @@ const DBG_FONT = "sink";
 // vertex format stride (vec3 pos, vec2 uv, vec4 color)
 const STRIDE = 9;
 
-// vertex shader template, replace {{user}} with user vertex shader code
-const VERT_TEMPLATE = `
-attribute vec3 a_pos;
-attribute vec2 a_uv;
-attribute vec4 a_color;
-
-varying vec3 v_pos;
-varying vec2 v_uv;
-varying vec4 v_color;
-
-uniform mat4 u_transform;
-
-vec4 def_vert() {
-	return u_transform * vec4(a_pos, 1.0);
-}
-
-{{user}}
-
-void main() {
-	vec4 pos = vert(a_pos, a_uv, a_color);
-	v_pos = a_pos;
-	v_uv = a_uv;
-	v_color = a_color;
-	gl_Position = pos;
-}
-`;
-
-// fragment shader template, replace {{user}} with user fragment shader code
-const FRAG_TEMPLATE = `
-precision mediump float;
-
-varying vec3 v_pos;
-varying vec2 v_uv;
-varying vec4 v_color;
-
-uniform sampler2D u_tex;
-
-vec4 def_frag() {
-	return v_color * texture2D(u_tex, v_uv);
-}
-
-{{user}}
-
-void main() {
-	gl_FragColor = frag(v_pos, v_uv, v_color, u_tex);
-	if (gl_FragColor.a == 0.0) {
-		discard;
-	}
-}
-`;
-
-// default {{user}} vertex shader code
-const DEF_VERT = `
-vec4 vert(vec3 pos, vec2 uv, vec4 color) {
-	return def_vert();
-}
-`;
-
-// default {{user}} fragment shader code
-const DEF_FRAG = `
-vec4 frag(vec3 pos, vec2 uv, vec4 color, sampler2D tex) {
-	return def_frag();
-}
-`;
-
 // transform the button state to the next state
 // e.g. a button might become "pressed" one frame, and it should become "down" next frame
 function processButtonState(s: ButtonState): ButtonState {
@@ -466,7 +404,7 @@ const s = (() => {
 			preserveDrawingBuffer: true,
 		});
 
-	const defShader = makeShader(gl, DEF_VERT, DEF_FRAG);
+	const defShader = new Shader(gl);
 
 	// a 1x1 white texture to draw raw shapes like rectangles and polygons
 	// we use a texture for those so we can use only 1 pipeline for drawing sprites + shapes
@@ -961,12 +899,11 @@ function loadShader(
 		name: string | null,
 		vert: string | null,
 		frag: string | null,
-	): ShaderData {
-		const shader = makeShader(s.gl, vert, frag);
+	) {
+		const shader = new Shader(s.gl, vert, frag);
 		if (name) {
 			s.shaders[name] = shader;
 		}
-		return shader;
 	}
 
 	return load(new Promise<ShaderData>((resolve, reject) => {
@@ -986,12 +923,14 @@ function loadShader(
 		if (isUrl) {
 			Promise.all([resolveUrl(vert), resolveUrl(frag)])
 				.then(([vcode, fcode]: [string | null, string | null]) => {
-					resolve(loadRawShader(name, vcode, fcode));
+					loadRawShader(name, vcode, fcode);
+					resolve();
 				})
 				.catch(reject);
 		} else {
 			try {
-				resolve(loadRawShader(name, vert, frag));
+				loadRawShader(name, vert, frag);
+				resolve();
 			} catch (err) {
 				reject(err);
 			}
@@ -1275,87 +1214,6 @@ function makeTex(
 
 }
 
-function makeShader(
-	gl: WebGLRenderingContext,
-	vertSrc: string | null = DEF_VERT,
-	fragSrc: string | null = DEF_FRAG,
-): GfxShader {
-
-	let msg;
-	const vcode = VERT_TEMPLATE.replace("{{user}}", vertSrc ?? DEF_VERT);
-	const fcode = FRAG_TEMPLATE.replace("{{user}}", fragSrc ?? DEF_FRAG);
-	const vertShader = gl.createShader(gl.VERTEX_SHADER);
-	const fragShader = gl.createShader(gl.FRAGMENT_SHADER);
-
-	gl.shaderSource(vertShader, vcode);
-	gl.shaderSource(fragShader, fcode);
-	gl.compileShader(vertShader);
-	gl.compileShader(fragShader);
-
-	if ((msg = gl.getShaderInfoLog(vertShader))) {
-		throw new Error(msg);
-	}
-
-	if ((msg = gl.getShaderInfoLog(fragShader))) {
-		throw new Error(msg);
-	}
-
-	const id = gl.createProgram();
-
-	gl.attachShader(id, vertShader);
-	gl.attachShader(id, fragShader);
-
-	gl.bindAttribLocation(id, 0, "a_pos");
-	gl.bindAttribLocation(id, 1, "a_uv");
-	gl.bindAttribLocation(id, 2, "a_color");
-
-	gl.linkProgram(id);
-
-	if ((msg = gl.getProgramInfoLog(id))) {
-		// for some reason on safari it always has a "\n" msg
-		if (msg !== "\n") {
-			throw new Error(msg);
-		}
-	}
-
-	return {
-
-		bind() {
-			gl.useProgram(id);
-		},
-
-		unbind() {
-			gl.useProgram(null);
-		},
-
-		send(uniform: Uniform) {
-			this.bind();
-			for (const name in uniform) {
-				const val = uniform[name];
-				const loc = gl.getUniformLocation(id, name);
-				if (typeof val === "number") {
-					gl.uniform1f(loc, val);
-				} else if (isMat4(val)) {
-					// @ts-ignore
-					gl.uniformMatrix4fv(loc, false, new Float32Array(val.m));
-				} else if (isColor(val)) {
-					// @ts-ignore
-					gl.uniform4f(loc, val.r, val.g, val.b, val.a);
-				} else if (isVec3(val)) {
-					// @ts-ignore
-					gl.uniform3f(loc, val.x, val.y, val.z);
-				} else if (isVec2(val)) {
-					// @ts-ignore
-					gl.uniform2f(loc, val.x, val.y);
-				}
-			}
-			this.unbind();
-		},
-
-	};
-
-}
-
 function makeFont(
 	tex: GfxTexture,
 	gw: number,
@@ -1391,7 +1249,7 @@ function drawRaw(
 	verts: Vertex[],
 	indices: number[],
 	tex: GfxTexture = s.defTex,
-	shader: GfxShader = s.defShader,
+	shader: Shader = s.defShader,
 	uniform: Uniform = {},
 ) {
 
